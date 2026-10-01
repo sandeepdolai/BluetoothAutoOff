@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
@@ -21,6 +23,8 @@ import android.widget.Toast;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    private static final int REQUEST_BLUETOOTH_PERMISSION = 1001;
+
     private EditText minutes;
     private TextView status;
     private TextView bluetoothStatus;
@@ -38,6 +42,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(createUi());
+        requestRequiredPermissions();
         updateScreen();
         handler.post(ticker);
     }
@@ -81,7 +86,7 @@ public class MainActivity extends Activity {
         box.addView(status);
 
         TextView note = text(
-                "The timer uses an exact alarm. This personal sideload build targets API 32 so the legacy Bluetooth off API can be used.",
+                "Requires Nearby devices / Bluetooth permission. Exact alarms are also required for the timer.",
                 13
         );
         box.addView(note);
@@ -89,7 +94,79 @@ public class MainActivity extends Activity {
         return box;
     }
 
+    private void requestRequiredPermissions() {
+        if (Build.VERSION.SDK_INT >= 31
+                && checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{"android.permission.BLUETOOTH_CONNECT"},
+                    REQUEST_BLUETOOTH_PERMISSION
+            );
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{"android.permission.POST_NOTIFICATIONS"},
+                    REQUEST_BLUETOOTH_PERMISSION + 1
+            );
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            String[] permissions,
+            int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == REQUEST_BLUETOOTH_PERMISSION) {
+            if (grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(
+                        this,
+                        "Bluetooth permission granted",
+                        Toast.LENGTH_SHORT
+                ).show();
+
+                if (Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                        != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(
+                            new String[]{"android.permission.POST_NOTIFICATIONS"},
+                            REQUEST_BLUETOOTH_PERMISSION + 1
+                    );
+                }
+            } else {
+                Toast.makeText(
+                        this,
+                        "Bluetooth permission is required for the timer",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        }
+    }
+
+    private boolean hasBluetoothPermission() {
+        return Build.VERSION.SDK_INT < 31
+                || checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void startTimer() {
+        if (!hasBluetoothPermission()) {
+            requestRequiredPermissions();
+            Toast.makeText(
+                    this,
+                    "Allow Nearby devices / Bluetooth permission first",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
+
         long mins;
 
         try {
@@ -162,10 +239,23 @@ public class MainActivity extends Activity {
         );
     }
 
+    private BluetoothAdapter getBluetoothAdapter() {
+        BluetoothManager manager = getSystemService(BluetoothManager.class);
+        return manager != null ? manager.getAdapter() : null;
+    }
+
     private void updateScreen() {
         if (bluetoothStatus != null) {
-            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-            boolean enabled = adapter != null && adapter.isEnabled();
+            BluetoothAdapter adapter = getBluetoothAdapter();
+            boolean enabled = false;
+
+            if (adapter != null && hasBluetoothPermission()) {
+                try {
+                    enabled = adapter.isEnabled();
+                } catch (SecurityException ignored) {
+                }
+            }
+
             bluetoothStatus.setText("Bluetooth: " + (enabled ? "ON" : "OFF"));
         }
 
