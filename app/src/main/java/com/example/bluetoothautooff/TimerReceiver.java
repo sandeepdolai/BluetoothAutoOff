@@ -3,8 +3,8 @@ package com.example.bluetoothautooff;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -15,11 +15,22 @@ public class TimerReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        boolean requested = false;
+        BluetoothManager manager = context.getSystemService(BluetoothManager.class);
+        BluetoothAdapter adapter = manager != null ? manager.getAdapter() : null;
 
-        if (adapter != null && adapter.isEnabled()) {
-            requested = adapter.disable();
+        boolean requested = false;
+        boolean permissionMissing = false;
+
+        if (Build.VERSION.SDK_INT >= 31
+                && context.checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissionMissing = true;
+        } else if (adapter != null && adapter.isEnabled()) {
+            try {
+                requested = adapter.disable();
+            } catch (SecurityException ignored) {
+                permissionMissing = true;
+            }
         }
 
         NotificationManager nm =
@@ -41,7 +52,9 @@ public class TimerReceiver extends BroadcastReceiver {
         builder.setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle("Bluetooth Auto-Off")
                 .setContentText(
-                        requested
+                        permissionMissing
+                                ? "Bluetooth permission was not granted."
+                                : requested
                                 ? "Bluetooth switched off."
                                 : "Bluetooth was already off or Android rejected the request."
                 )
