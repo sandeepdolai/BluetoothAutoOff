@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 
 public class TimerReceiver extends BroadcastReceiver {
@@ -18,19 +19,43 @@ public class TimerReceiver extends BroadcastReceiver {
         BluetoothManager manager = context.getSystemService(BluetoothManager.class);
         BluetoothAdapter adapter = manager != null ? manager.getAdapter() : null;
 
-        boolean requested = false;
-        boolean permissionMissing = false;
+        boolean permissionDenied = false;
+        boolean securityException = false;
+        boolean requestStarted = false;
+        boolean alreadyOff = false;
+        boolean noAdapter = adapter == null;
 
         if (Build.VERSION.SDK_INT >= 31
                 && context.checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            permissionMissing = true;
-        } else if (adapter != null && adapter.isEnabled()) {
+                != PackageManager.PERMISSION_GRANTED) {
+            permissionDenied = true;
+        } else if (adapter != null) {
             try {
-                requested = adapter.disable();
-            } catch (SecurityException ignored) {
-                permissionMissing = true;
+                if (adapter.isEnabled()) {
+                    // For targetSdk <= 32, Android still permits this legacy API.
+                    requestStarted = adapter.disable();
+                } else {
+                    alreadyOff = true;
+                }
+            } catch (SecurityException e) {
+                // Keep this separate from an actual permission denial.
+                securityException = true;
             }
+        }
+
+        String message;
+        if (noAdapter) {
+            message = "Bluetooth adapter is unavailable.";
+        } else if (permissionDenied) {
+            message = "Android reports BLUETOOTH_CONNECT is denied.";
+        } else if (securityException) {
+            message = "Android threw SecurityException while disabling Bluetooth.";
+        } else if (alreadyOff) {
+            message = "Bluetooth was already off.";
+        } else if (requestStarted) {
+            message = "Bluetooth shutdown request sent.";
+        } else {
+            message = "Android rejected the Bluetooth shutdown request.";
         }
 
         NotificationManager nm =
@@ -51,18 +76,12 @@ public class TimerReceiver extends BroadcastReceiver {
 
         builder.setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle("Bluetooth Auto-Off")
-                .setContentText(
-                        permissionMissing
-                                ? "Bluetooth permission was not granted."
-                                : requested
-                                ? "Bluetooth switched off."
-                                : "Bluetooth was already off or Android rejected the request."
-                )
+                .setContentText(message)
                 .setAutoCancel(true);
 
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                != PackageManager.PERMISSION_GRANTED) {
             return;
         }
 
