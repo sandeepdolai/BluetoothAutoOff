@@ -22,24 +22,27 @@ public class TimerReceiver extends BroadcastReceiver {
         boolean permissionDenied = false;
         boolean securityException = false;
         boolean requestStarted = false;
-        boolean alreadyOff = false;
         boolean noAdapter = adapter == null;
+        String securityMessage = "";
 
         if (Build.VERSION.SDK_INT >= 31
                 && context.checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
                 != PackageManager.PERMISSION_GRANTED) {
             permissionDenied = true;
         } else if (adapter != null) {
+            /*
+             * Do not call isEnabled() here.  disable() itself reports false when
+             * Bluetooth is already off, and keeping the permission-sensitive call
+             * in one place makes the failure unambiguous.
+             */
             try {
-                if (adapter.isEnabled()) {
-                    // For targetSdk <= 32, Android still permits this legacy API.
-                    requestStarted = adapter.disable();
-                } else {
-                    alreadyOff = true;
-                }
+                // targetSdk 32 intentionally keeps the legacy disable() API available.
+                requestStarted = adapter.disable();
             } catch (SecurityException e) {
-                // Keep this separate from an actual permission denial.
                 securityException = true;
+                securityMessage = e.getMessage() == null
+                        ? "No exception details were provided."
+                        : e.getMessage();
             }
         }
 
@@ -47,15 +50,13 @@ public class TimerReceiver extends BroadcastReceiver {
         if (noAdapter) {
             message = "Bluetooth adapter is unavailable.";
         } else if (permissionDenied) {
-            message = "Android reports BLUETOOTH_CONNECT is denied.";
+            message = "BLUETOOTH_CONNECT is actually denied.";
         } else if (securityException) {
-            message = "Android threw SecurityException while disabling Bluetooth.";
-        } else if (alreadyOff) {
-            message = "Bluetooth was already off.";
+            message = "Bluetooth disable was blocked by Android: " + securityMessage;
         } else if (requestStarted) {
             message = "Bluetooth shutdown request sent.";
         } else {
-            message = "Android rejected the Bluetooth shutdown request.";
+            message = "Bluetooth was already off or Android rejected the request.";
         }
 
         NotificationManager nm =
