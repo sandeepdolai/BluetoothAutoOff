@@ -21,3 +21,5 @@ The app is intended for personal sideloading, not Play Store distribution.
 3. The app schedules an exact alarm.
 4. When it expires, the receiver requests Bluetooth OFF.
 5. A notification reports the result.
+
+Build workflow uses the current Android SDK setup action and installs the required Android 35 SDK packages.
